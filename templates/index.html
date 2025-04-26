@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-Speech Converter | Speech Synthesis Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="background-animation">
+        <div class="bubble"></div>
+        <div class="bubble"></div>
+        <div class="bubble"></div>
+        <div class="bubble"></div>
+        <div class="bubble"></div>
+    </div>
+
+    <div class="container">
+        <header class="app-header">
+            <div class="logo">
+                <i class="fas fa-microphone-alt"></i>
+                <h1>Speech<span>Synth</span></h1>
+            </div>
+            <p class="tagline">Transform your text into natural-sounding speech</p>
+        </header>
+
+        <main class="app-content">
+            <form id="textForm" class="input-card">
+                <div class="input-header">
+                    <h2><i class="fas fa-pen-fancy"></i> Your Text</h2>
+                    <div class="word-count">0 words</div>
+                </div>
+                <textarea id="textInput" placeholder="Type or paste your text here..."></textarea>
+
+                <div class="voice-options">
+                    <div class="option-group">
+                        <label for="voiceSelect"><i class="fas fa-user"></i> Voice</label>
+                        <select id="voiceSelect">
+                            <option value="default">Default Voice</option>
+                            <option value="male">Male Voice</option>
+                            <option value="female">Female Voice</option>
+                        </select>
+                    </div>
+                    <div class="option-group">
+                        <label for="speedSelect"><i class="fas fa-tachometer-alt"></i> Speed</label>
+                        <select id="speedSelect">
+                            <option value="1">Normal</option>
+                            <option value="0.8">Slow</option>
+                            <option value="1.2">Fast</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button type="submit" class="button convert-btn" id="convertBtn">
+                        <i class="fas fa-magic"></i> Convert to Speech
+                    </button>
+                    <button type="button" class="button secondary-btn" id="clearBtn">
+                        <i class="fas fa-trash-alt"></i> Clear
+                    </button>
+                    <a id="downloadBtn" class="button download-btn" style="display:none;" download>
+                        <i class="fas fa-download"></i> Download MP3
+                    </a>
+                </div>
+            </form>
+
+            <div id="audioContainer" class="output-card" style="display:none;">
+                <div class="output-header">
+                    <h2><i class="fas fa-music"></i> Audio Preview</h2>
+                    <div class="audio-duration">0:00</div>
+                </div>
+                <div class="audio-player-container">
+                    <audio id="audioPlayer" controls></audio>
+                    <div class="waveform" id="waveform"></div>
+                </div>
+            </div>
+
+            <div id="statusMessage" class="status-message"></div>
+        </main>
+
+        <footer class="app-footer">
+            <p>Need help? <a href="#"><i class="fas fa-question-circle"></i> Visit our support center</a></p>
+        </footer>
+    </div>
+
+    <script>
+        const form = document.getElementById('textForm');
+        const convertBtn = document.getElementById('convertBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const audioContainer = document.getElementById('audioContainer');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const textInput = document.getElementById('textInput');
+        const wordCount = document.querySelector('.word-count');
+
+        // Update word count
+        textInput.addEventListener('input', () => {
+            const text = textInput.value.trim();
+            const words = text ? text.split(/\s+/).length : 0;
+            wordCount.textContent = `${words} ${words === 1 ? 'word' : 'words'}`;
+        });
+
+        // Clear button functionality
+        clearBtn.addEventListener('click', () => {
+            textInput.value = '';
+            wordCount.textContent = '0 words';
+            audioContainer.style.display = 'none';
+            downloadBtn.style.display = 'none';
+            showStatus('Text cleared', 'info');
+        });
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = textInput.value.trim();
+
+            if (!text) {
+                showStatus('Please enter some text to convert', 'error');
+                textInput.focus();
+                return;
+            }
+
+            convertBtn.disabled = true;
+            convertBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            showStatus('Converting your text to speech...', 'loading');
+
+            try {
+                const voice = document.getElementById('voiceSelect').value;
+                const speed = document.getElementById('speedSelect').value;
+
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        text,
+                        voice,
+                        speed
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showStatus('Conversion successful! Click play to listen', 'success');
+                    downloadBtn.href = data.download_url;
+                    downloadBtn.style.display = 'inline-block';
+                    audioContainer.style.display = 'block';
+                    audioPlayer.src = data.play_url;
+
+                    // Update duration when metadata is loaded
+                    audioPlayer.onloadedmetadata = () => {
+                        const duration = document.querySelector('.audio-duration');
+                        duration.textContent = formatTime(audioPlayer.duration);
+                    };
+                } else {
+                    showStatus(data.message || 'Conversion failed', 'error');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                showStatus('Network error. Please try again.', 'error');
+            } finally {
+                convertBtn.disabled = false;
+                convertBtn.innerHTML = '<i class="fas fa-magic"></i> Convert to Speech';
+            }
+        });
+
+        function showStatus(message, type) {
+            statusMessage.innerText = message;
+            statusMessage.className = 'status-message ' + type;
+
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusMessage.innerText = '';
+                    statusMessage.className = 'status-message';
+                }, 5000);
+            }
+        }
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+    </script>
+</body>
+</html>
